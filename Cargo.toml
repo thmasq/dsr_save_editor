@@ -5,5 +5,7 @@ edition = "2021"
 
 [dependencies]
 aes = "0.8.4"
-clap = {version = "4.5.23", features = ["derive"]}
-thiserror = "2.0.4"
+byteorder = "1.5.0"
+cbc = "0.1.2"
+inquire = "0.7.5"
+md5 = "0.7.0"
