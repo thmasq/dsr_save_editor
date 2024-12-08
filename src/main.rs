@@ -15,9 +15,9 @@ const DSR_KEY: [u8; 16] = [
 
 #[derive(Debug, Clone)]
 enum SoulState {
-	Human = 0,
 	Hollow = 8,
-	Unknown,
+	Human = 0,
+	Unknown = 4,
 }
 
 #[derive(Debug, Clone)]
@@ -53,7 +53,6 @@ struct CharacterStats {
 	hair: u8,
 	hair_color: u8,
 	deaths: u32,
-	phantom_encounters: u32,
 }
 
 impl CharacterStats {
@@ -65,12 +64,14 @@ impl CharacterStats {
 			health_current: file.read_u32::<LittleEndian>()?,
 			health_max1: file.read_u32::<LittleEndian>()?,
 			health_max2: file.read_u32::<LittleEndian>()?,
+
 			stamina2: {
-				file.seek(SeekFrom::Start(148))?;
+				file.seek(SeekFrom::Current(20))?;
 				file.read_u32::<LittleEndian>()?
 			},
 			stamina3: file.read_u64::<LittleEndian>()?,
-			vitality: file.read_u64::<LittleEndian>()?,
+
+			vitality: { file.read_u64::<LittleEndian>()? },
 			attunement: file.read_u64::<LittleEndian>()?,
 			endurance: file.read_u64::<LittleEndian>()?,
 			strength: file.read_u64::<LittleEndian>()?,
@@ -78,66 +79,61 @@ impl CharacterStats {
 			intelligence: file.read_u64::<LittleEndian>()?,
 			faith: file.read_u64::<LittleEndian>()?,
 			humanity: {
-				file.seek(SeekFrom::Start(224))?;
+				file.seek(SeekFrom::Current(8))?;
 				file.read_u64::<LittleEndian>()?
 			},
 			resistance: file.read_u64::<LittleEndian>()?,
+
 			level: file.read_u32::<LittleEndian>()?,
 			souls: file.read_u32::<LittleEndian>()?,
 			earned_souls: file.read_u64::<LittleEndian>()?,
+
 			soul_state: match {
-				file.seek(SeekFrom::Start(260))?;
+				file.seek(SeekFrom::Current(4))?;
 				file.read_u32::<LittleEndian>()?
 			} {
 				0 => SoulState::Human,
 				8 => SoulState::Hollow,
 				_ => SoulState::Unknown,
 			},
+
 			name: {
 				let mut name_bytes = [0u16; 14];
 				let mut raw_bytes = [0u8; 28];
 				file.read_exact(&mut raw_bytes)?;
+
 				for i in 0..14 {
 					name_bytes[i] = u16::from_le_bytes([raw_bytes[i * 2], raw_bytes[i * 2 + 1]]);
 				}
+
 				let name_length = name_bytes.iter().position(|&x| x == 0).unwrap_or(name_bytes.len());
-				String::from_utf16(&name_bytes[0..name_length]).unwrap_or_default()
+
+				String::from_utf16(&name_bytes[0..name_length])
+					.unwrap_or_default()
+					.to_string()
 			},
 			is_male: {
-				file.seek(SeekFrom::Start(301))?;
+				file.seek(SeekFrom::Current(9))?;
 				file.read_u8()? == 1
 			},
 			character_class: file.read_u8()?,
 			body_type: file.read_u8()?,
 			starting_gift: file.read_u8()?,
+
 			poison_resistance: {
-				file.seek(SeekFrom::Start(352))?;
+				file.seek(SeekFrom::Current(63))?;
 				file.read_u8()?
 			},
-			bleeding_resistance: {
-				file.seek(SeekFrom::Start(356))?;
-				file.read_u8()?
-			},
-			poison_resistance2: {
-				file.seek(SeekFrom::Start(360))?;
-				file.read_u8()?
-			},
-			damnation_resistance: {
-				file.seek(SeekFrom::Start(364))?;
-				file.read_u8()?
-			},
-			face: {
-				file.seek(SeekFrom::Start(372))?;
-				file.read_u8()?
-			},
+			bleeding_resistance: file.read_u8()?,
+			poison_resistance2: file.read_u8()?,
+			damnation_resistance: file.read_u8()?,
+
+			face: file.read_u8()?,
 			hair: file.read_u8()?,
 			hair_color: file.read_u8()?,
+
 			deaths: {
-				file.seek(SeekFrom::Start(124272))?;
-				file.read_u32::<LittleEndian>()?
-			},
-			phantom_encounters: {
-				file.seek(SeekFrom::Current(13))?;
+				file.seek(SeekFrom::Start(127_448))?;
 				file.read_u32::<LittleEndian>()?
 			},
 		})
@@ -150,51 +146,43 @@ impl CharacterStats {
 			.open(file_path)
 			.map_err(|e| Error::new(ErrorKind::Other, format!("Could not open file: {}", e)))?;
 
-		fn write_at_offset<W: Write + Seek>(
-			file: &mut W,
-			offset: u64,
-			write_fn: impl Fn(&mut W) -> Result<(), Error>,
-		) -> Result<(), Error> {
-			let current_pos = file.stream_position()?;
-			file.seek(SeekFrom::Start(offset))?;
-			write_fn(file)?;
-			file.seek(SeekFrom::Start(current_pos))?;
-			Ok(())
-		}
+		file.seek(SeekFrom::Start(116))?;
 
-		write_at_offset(&mut file, 116, |f| f.write_u32::<LittleEndian>(self.health_current))?;
-		write_at_offset(&mut file, 120, |f| f.write_u32::<LittleEndian>(self.health_max1))?;
-		write_at_offset(&mut file, 124, |f| f.write_u32::<LittleEndian>(self.health_max2))?;
+		file.write_u32::<LittleEndian>(self.health_current)?;
+		file.write_u32::<LittleEndian>(self.health_max1)?;
+		file.write_u32::<LittleEndian>(self.health_max2)?;
 
-		write_at_offset(&mut file, 148, |f| f.write_u32::<LittleEndian>(self.stamina2))?;
-		write_at_offset(&mut file, 156, |f| f.write_u64::<LittleEndian>(self.stamina3))?;
+		file.seek(SeekFrom::Current(20))?;
+		file.write_u32::<LittleEndian>(self.stamina2)?;
+		file.write_u64::<LittleEndian>(self.stamina3)?;
 
-		let stat_offsets = [
-			(168, self.vitality),
-			(176, self.attunement),
-			(184, self.endurance),
-			(192, self.strength),
-			(200, self.dexterity),
-			(208, self.intelligence),
-			(216, self.faith),
-			(224, self.humanity),
-			(232, self.resistance),
+		let stats = [
+			self.vitality,
+			self.attunement,
+			self.endurance,
+			self.strength,
+			self.dexterity,
+			self.intelligence,
+			self.faith,
+			self.humanity,
+			self.resistance,
 		];
 
-		for (offset, value) in &stat_offsets {
-			write_at_offset(&mut file, *offset, |f| f.write_u64::<LittleEndian>(*value))?;
+		for stat in stats.iter() {
+			file.write_u64::<LittleEndian>(*stat)?;
 		}
 
-		write_at_offset(&mut file, 240, |f| f.write_u32::<LittleEndian>(self.level))?;
-		write_at_offset(&mut file, 244, |f| f.write_u32::<LittleEndian>(self.souls))?;
-		write_at_offset(&mut file, 248, |f| f.write_u64::<LittleEndian>(self.earned_souls))?;
+		file.write_u32::<LittleEndian>(self.level)?;
+		file.write_u32::<LittleEndian>(self.souls)?;
+		file.write_u64::<LittleEndian>(self.earned_souls)?;
 
+		file.seek(SeekFrom::Current(4))?;
 		let soul_state_value = match self.soul_state {
 			SoulState::Human => 0,
 			SoulState::Hollow => 8,
-			SoulState::Unknown => 0,
+			SoulState::Unknown => 4,
 		};
-		write_at_offset(&mut file, 260, |f| f.write_u32::<LittleEndian>(soul_state_value))?;
+		file.write_u32::<LittleEndian>(soul_state_value)?;
 
 		let mut name_bytes = [0u16; 14];
 		let name_utf16: Vec<u16> = self.name.encode_utf16().collect();
@@ -207,26 +195,26 @@ impl CharacterStats {
 			raw_bytes[i * 2] = bytes[0];
 			raw_bytes[i * 2 + 1] = bytes[1];
 		}
-		write_at_offset(&mut file, 288, |f| f.write_all(&raw_bytes))?;
+		file.write_all(&raw_bytes)?;
 
-		write_at_offset(&mut file, 301, |f| f.write_u8(if self.is_male { 1 } else { 0 }))?;
-		write_at_offset(&mut file, 302, |f| f.write_u8(self.character_class))?;
-		write_at_offset(&mut file, 303, |f| f.write_u8(self.body_type))?;
-		write_at_offset(&mut file, 304, |f| f.write_u8(self.starting_gift))?;
+		file.seek(SeekFrom::Current(9))?;
+		file.write_u8(if self.is_male { 1 } else { 0 })?;
+		file.write_u8(self.character_class)?;
+		file.write_u8(self.body_type)?;
+		file.write_u8(self.starting_gift)?;
 
-		write_at_offset(&mut file, 352, |f| f.write_u8(self.poison_resistance))?;
-		write_at_offset(&mut file, 356, |f| f.write_u8(self.bleeding_resistance))?;
-		write_at_offset(&mut file, 360, |f| f.write_u8(self.poison_resistance2))?;
-		write_at_offset(&mut file, 364, |f| f.write_u8(self.damnation_resistance))?;
+		file.seek(SeekFrom::Current(63))?;
+		file.write_u8(self.poison_resistance)?;
+		file.write_u8(self.bleeding_resistance)?;
+		file.write_u8(self.poison_resistance2)?;
+		file.write_u8(self.damnation_resistance)?;
 
-		write_at_offset(&mut file, 372, |f| f.write_u8(self.face))?;
-		write_at_offset(&mut file, 373, |f| f.write_u8(self.hair))?;
-		write_at_offset(&mut file, 374, |f| f.write_u8(self.hair_color))?;
+		file.write_u8(self.face)?;
+		file.write_u8(self.hair)?;
+		file.write_u8(self.hair_color)?;
 
-		write_at_offset(&mut file, 124272, |f| f.write_u32::<LittleEndian>(self.deaths))?;
-		write_at_offset(&mut file, 124286, |f| {
-			f.write_u32::<LittleEndian>(self.phantom_encounters)
-		})?;
+		file.seek(SeekFrom::Start(127_448))?;
+		file.write_u32::<LittleEndian>(self.deaths)?;
 
 		Ok(())
 	}
@@ -262,7 +250,7 @@ impl Bnd4Entry {
 		data_offset: usize,
 		name_offset: usize,
 		footer_length: usize,
-	) -> Result<Self, Error> {
+	) -> Bnd4Entry {
 		let name = String::from_utf16(
 			&raw[name_offset..name_offset + 24]
 				.chunks_exact(2)
@@ -275,7 +263,7 @@ impl Bnd4Entry {
 		let encrypted_data = raw[data_offset + 16..data_offset + size].to_vec();
 		let checksum = raw[data_offset..data_offset + 16].to_vec();
 
-		Ok(Self {
+		Self {
 			raw,
 			index,
 			decrypted_slot_path,
@@ -292,7 +280,7 @@ impl Bnd4Entry {
 			decrypted_data_length: 0,
 			character_name: String::new(),
 			character_stats: None,
-		})
+		}
 	}
 
 	fn decrypt(&mut self) -> Result<(), Error> {
@@ -345,7 +333,7 @@ impl Bnd4Entry {
 				fs::remove_file(temp_path)?;
 				Err(Error::new(
 					ErrorKind::InvalidData,
-					format!("Failed to load character stats: {}", e),
+					format!("Failed to load character stats: {e}"),
 				))
 			},
 		}
@@ -470,7 +458,6 @@ fn prompt_character_stats(
 		hair: 0,
 		hair_color: 0,
 		deaths: 0,
-		phantom_encounters: 0,
 	});
 
 	let name = Text::new("Character Name:").with_default(&base_stats.name).prompt()?;
@@ -593,8 +580,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 		let pos = BND4_HEADER_LEN + (BND4_ENTRY_HEADER_LEN * i);
 		let entry_header = &raw[pos..pos + BND4_ENTRY_HEADER_LEN];
 
-		if &entry_header[0..8] != &[0x50, 0x00, 0x00, 0x00, 0xff, 0xff, 0xff, 0xff] {
-			return Err(format!("Entry header #{} does not match expected magic value", i).into());
+		if entry_header[0..8] != [0x50, 0x00, 0x00, 0x00, 0xff, 0xff, 0xff, 0xff] {
+			return Err(format!("Entry header #{i} does not match expected magic value").into());
 		}
 
 		let entry_size = u32::from_le_bytes(entry_header[8..12].try_into().unwrap()) as usize;
@@ -610,7 +597,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 			entry_data_offset,
 			entry_name_offset,
 			entry_footer_length,
-		)?;
+		);
 
 		entry.decrypt()?;
 
@@ -623,7 +610,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
 	if list_slots {
 		for (slot, name) in slot_occupancy.iter() {
-			println!("Slot #{} occupied; character name: [{}]", slot, name);
+			println!("Slot #{slot} occupied; character name: [{name}]");
 		}
 		return Ok(());
 	}
@@ -650,7 +637,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 			entry.load_character_stats()?;
 
 			if (slot >= 0 && i == slot as usize) || slot == -1 {
-				println!("\nEditing Slot #{} - Character: {}", i, name);
+				println!("\nEditing Slot #{i} - Character: {name}");
 
 				if let Some(current_stats) = &entry.character_stats {
 					let new_stats = prompt_character_stats(Some(current_stats))?;
@@ -662,7 +649,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
 	let mut output_file = File::create(&output_sl2)?;
 	output_file.write_all(&raw)?;
-	println!("\nDONE! Wrote to output file: {}", output_sl2);
+	println!("\nDONE! Wrote to output file: {output_sl2}");
 
 	Ok(())
 }
